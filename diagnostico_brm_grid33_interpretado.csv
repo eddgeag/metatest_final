@@ -1,0 +1,15 @@
+Metric,Value,Significado,Interpretacion
+Accuracy,0.9,Proporción de predicciones correctas,El modelo acierta el 90% de los casos
+Balanced_Accuracy,0.931,Promedio de sensibilidades por clase,El rendimiento es balanceado entre clases
+Kappa,0.844,Acuerdo ajustado por azar,El acuerdo modelo-datos es muy alto
+AUC,0.948,Área bajo la curva ROC multiclase,Excelente discriminación entre clases
+LogLoss,0.61,Penaliza predicciones mal calibradas,Las probabilidades predichas son coherentes
+Global_Rhat_max,1.004012,Convergencia de cadenas MCMC (ideal≈1),Cadenas convergieron sin problemas
+Global_ESS_bulk_min,2030.252,Tamaño efectivo de muestra en medias (bulk),Estimaciones estables en la parte central
+Global_ESS_tail_min,661.396,Tamaño efectivo de muestra en colas,Intervalos de credibilidad confiables
+elpd_loo,-5.5,Densidad predictiva esperada con LOO,Sirve para comparar modelos; menos negativo es mejor
+p_loo,3.3,Complejidad efectiva del modelo (LOO),El modelo usa efectivamente 3 parámetros
+looic,11.1,Criterio de información basado en LOO,"Comparativo, más bajo indica mejor ajuste"
+elpd_waic,-4.7,Densidad predictiva esperada con WAIC,"Similar a LOO, consistente con buen ajuste"
+p_waic,2.4,Complejidad efectiva del modelo (WAIC),"Baja complejidad, no hay sobreajuste"
+waic,9.3,Criterio de información basado en WAIC,Coherente con looic; menor es mejor

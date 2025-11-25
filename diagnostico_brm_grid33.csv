@@ -1,0 +1,15 @@
+Metric,Value
+Accuracy,0.9
+Balanced_Accuracy,0.931
+Kappa,0.844
+AUC,0.948
+LogLoss,0.61
+Global_Rhat_max,1.004012
+Global_ESS_bulk_min,2030.252
+Global_ESS_tail_min,661.396
+elpd_loo,-5.5
+p_loo,3.3
+looic,11.1
+elpd_waic,-4.7
+p_waic,2.4
+waic,9.3
