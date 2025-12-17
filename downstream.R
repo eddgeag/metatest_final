@@ -162,8 +162,8 @@ make_feature_corr_heatmap <- function(data, annotation_col, ann_colors, group_na
     color = colorRampPalette(c("blue","white","red"))(100),
     cluster_cols = FALSE,
     cluster_rows = FALSE,
-    fontsize_row = 6,
-    fontsize_col = 6,
+    fontsize_row = 10,
+    fontsize_col = 10,
     main = paste("Spearman correlations between features -", group_name),
     annotation_col = ann_sub["View", drop = FALSE],
     annotation_colors = ann_colors,
@@ -236,6 +236,9 @@ contrast_t_test <- function(datas, factor_, response, contrast_expr) {
 
 
 plot_heatmap_stats_ordered <- function(statistic, p_adj, df_weights, alpha = 0.05) {
+  
+  # df_weights <- df_weights_unique
+  # alpha <-  0.5
   # Pasar a formato largo
   stat_long <- statistic %>%
     as.data.frame() %>%
@@ -248,7 +251,7 @@ plot_heatmap_stats_ordered <- function(statistic, p_adj, df_weights, alpha = 0.0
     pivot_longer(-Feature, names_to = "Contrast", values_to = "p_adj")
   
   df_long <- left_join(stat_long, pval_long, by = c("Feature", "Contrast"))
-  df_long <- right_join(df_long, df_weights, by = "Feature")
+  df_long <- inner_join(df_long, df_weights, by = "Feature")
   df_long <- df_long %>%
     mutate(
       sig = ifelse(p_adj < alpha, "*", ""),
@@ -292,9 +295,9 @@ plot_heatmap_stats_ordered <- function(statistic, p_adj, df_weights, alpha = 0.0
     theme_minimal(base_size = 12) +
     theme(
       axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.text.y = element_text(size = 7),
+      axis.text.y = element_text(size = 10,colour = "black",face = "bold"),
       strip.background = element_rect(fill = "grey90", color = "grey50"),
-      strip.text.y = element_text(angle = 0, face = "bold"),
+      strip.text.y = element_text(angle = 0, face = "bold",colour = "black"),
       panel.spacing.y = unit(0.5, "lines")
     ) +
     labs(
@@ -304,7 +307,7 @@ plot_heatmap_stats_ordered <- function(statistic, p_adj, df_weights, alpha = 0.0
 }
 
 modelo <- readRDS("./modelo.rds")
-biomarcadores <- readRDS("./biomarcadores_7.rds")
+biomarcadores <- readRDS("./biomarcadores_65.rds")
 trans_metadata <- readRDS("~/Documents/PhD/metatest_final/repo/ready_for_modeling.rds")$features_metadata
 df_train <- readRDS("~/Documents/PhD/metatest_final/repo/df_train_final.rds")
 df_test <- readRDS("~/Documents/PhD/metatest_final/repo/df_test_final.rds")
@@ -312,7 +315,7 @@ df_test <- readRDS("~/Documents/PhD/metatest_final/repo/df_test_final.rds")
 feats_included <- colnames(df_train)
 all_data <- bind_rows(df_train, df_test)
 
-folder <- "./27-09-25_7"
+folder <- "./02-12-25_65"
 
 dir_create(folder)
 
@@ -355,7 +358,6 @@ omics_colors <- c(
   "Proteomics"      = "black",
   "Metabolomics"    = "olivedrab"
 )
-
 # p1
 p1 <- ggplot(df_factors, aes(x = factor, y = value, fill = view)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
@@ -363,6 +365,9 @@ p1 <- ggplot(df_factors, aes(x = factor, y = value, fill = view)) +
   labs(x = "Factor", y = "Explained variance (%)", fill = "Omics view") +
   theme_minimal(base_size = 14) +
   theme(
+    text = element_text(face = "bold", colour = "black"),   # TODO EN NEGRITA Y NEGRO
+    axis.text.x = element_text(colour = "black"),           # xticks en negro
+    axis.text.y = element_text(colour = "black"),           # yticks en negro
     legend.position = "top",
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank()
@@ -375,6 +380,9 @@ p2 <- ggplot(df_total, aes(x = view, y = R2, fill = view)) +
   labs(x = "Omics view", y = "Total explained variance (%)") +
   theme_minimal(base_size = 14) +
   theme(
+    text = element_text(face = "bold", colour = "black"),   # TODO EN NEGRITA Y NEGRO
+    axis.text.x = element_text(colour = "black"),           # xticks en negro
+    axis.text.y = element_text(colour = "black"),           # yticks en negro
     legend.position = "none",
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank()
@@ -383,7 +391,6 @@ p2 <- ggplot(df_total, aes(x = view, y = R2, fill = view)) +
 fig <- (p1 + p2) + plot_annotation(tag_levels = "A")
 
 fig
-
 
 ggsave(
   filename = file.path(folder, folder_integracion, "./Variance_Explained.jpeg"),
@@ -427,7 +434,7 @@ p_scatter
 
 ggsave(
   filename = file.path(folder, folder_integracion, "./MOFA2_latent_factors.jpeg"),
-  plot = fig,
+  plot = p_scatter,
   width = 8,
   height = 8
 )
@@ -479,12 +486,12 @@ df_weights <- aux$data %>%
 
 # Mantener solo las que están en all_data
 df_weights <- df_weights[df_weights$label %in% colnames(all_data), ]
-
+# ===================== #
 # Factor 1
 df_factor1 <- df_weights %>%
   filter(factor == "Factor1") %>%
   group_by(label) %>%
-  slice_max(order_by = abs(weight_signed), n = 1) %>%  # quedarnos con el peso dominante
+  slice_max(order_by = abs(weight_signed), n = 1) %>%
   ungroup() %>%
   arrange(weight_signed) %>%
   mutate(order = row_number())
@@ -498,15 +505,14 @@ p1 <- ggplot(df_factor1, aes(x = order, y = weight_signed, fill = view)) +
        x = "Feature (ordered)",
        y = "Signed weight",
        fill = "Omics view") +
-  geom_hline(yintercept = 0,
-             linetype = "dashed",
-             color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
   theme_minimal(base_size = 14) +
   theme(
     legend.position = "top",
     panel.grid.minor = element_blank(),
     panel.grid.major.y = element_blank(),
-    plot.title = element_text(hjust = 0.5, face = "bold")
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.y = element_text(colour = "black", face = "bold", size = 12)   # <<< AUMENTADO + NEGRITA
   )
 
 # ===================== #
@@ -528,19 +534,18 @@ p2 <- ggplot(df_factor2, aes(x = order, y = weight_signed, fill = view)) +
        x = "Feature (ordered)",
        y = "Signed weight",
        fill = "Omics view") +
-  geom_hline(yintercept = 0,
-             linetype = "dashed",
-             color = "grey40") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
   theme_minimal(base_size = 14) +
   theme(
     legend.position = "top",
     panel.grid.minor = element_blank(),
     panel.grid.major.y = element_blank(),
-    plot.title = element_text(hjust = 0.5, face = "bold")
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.y = element_text(colour = "black", face = "bold", size = 12)   # <<< MISMO CAMBIO AQUÍ
   )
 
 # ===================== #
-# Figura compuesta
+# Figura final
 fig <- p1 + p2 + plot_annotation(tag_levels = "A")
 fig
 
@@ -552,7 +557,7 @@ ggsave(
 )
 
 
-
+dddd
 
 
 ##===bivariante=====
@@ -798,6 +803,42 @@ print(map_feats)
 # Seleccionar las columnas de R en el orden de df_train
 R_sub <- all_R[, map_feats$R_col, drop = FALSE]
 
+### biomarcadores 65 !!!!!
+
+biomarkers <- readRDS("./biomarcadores_65.rds")
+
+ref <- colnames(R_sub)
+x <- biomarkers$features$Feature
+
+match_to_ref <- function(name, ref) {
+  
+  # candidatos habituales
+  candidates <- c(
+    name,
+    gsub("_", "-", name),
+    gsub("_", ".", name),
+    gsub("_", "", name),
+    gsub("_", "..", name)
+  )
+  
+  # ¿alguno coincide exactamente?
+  exact <- candidates[candidates %in% ref]
+  if (length(exact) > 0) return(exact[1])
+  
+  # matching tolerante (regex flexible)
+  pattern <- gsub("_", "[-_.]*", name)     # cualquier separador
+  approx <- ref[grepl(pattern, ref)]
+  if (length(approx) > 0) return(approx[1])
+  
+  # si no encuentra coincidencia:
+  warning(paste("No match found for:", name))
+  return(NA)
+}
+
+normalized <- sapply(x, match_to_ref, ref = ref)
+
+R_sub <- R_sub[,normalized]
+colnames(R_sub)
 
 y_all <- sub("_.*", "", rownames(R_sub))
 R_sub$y <-y_all
@@ -807,7 +848,17 @@ p_NP     <- make_feature_corr_heatmap(R_sub, annotation_col, ann_colors, "NP")
 p_SO     <- make_feature_corr_heatmap(R_sub, annotation_col, ann_colors, "SO")
 p_FD     <- make_feature_corr_heatmap(R_sub, annotation_col, ann_colors, "FD") ## must have more than >4 observation its has 3
 
+cor_NP <- psych::corr.test(R_sub[R_sub$y=="NP",-ncol(R_sub)],method = "spearman",adjust = "BH")
+write.csv(cor_NP$r,"cor_NP.csv")
+write.csv(cor_NP$p,"cor_p_NP.csv")
 
+cor_SO <- psych::corr.test(R_sub[R_sub$y=="SO",-ncol(R_sub)],method = "spearman",adjust = "BH")
+write.csv(cor_SO$r,"cor_SO.csv")
+write.csv(cor_SO$p,"cor_p_SO.csv")
+
+cor_FD <- psych::corr.test(R_sub[R_sub$y=="FD",-ncol(R_sub)],method = "spearman",adjust = "BH")
+write.csv(cor_FD$r,"cor_FD.csv")
+write.csv(cor_FD$p,"cor_p_FD.csv")
 
 
 folder_correlaciones <- "correlaciones_bivariante_integrado"
@@ -883,7 +934,7 @@ final_feats <- final_feats$Feature
 
 df_weights_unique <- df_weights %>%
   distinct(label, view)
-
+df_weights_unique
 colnames(df_weights_unique)[1] <- "Feature"
 
 p1 <- plot_pca_feats(pcx, df_weights_unique, feats, axes = c(1,2))
@@ -891,7 +942,8 @@ p1 <- plot_pca_feats(pcx, df_weights_unique, feats, axes = c(1,2))
 pcx2 <- prcomp(all_data[, final_feats], scale. = TRUE)
 
 
-
+factoextra::fviz_pca_contrib(pcx2,axes = 1,choice = "var")
+factoextra::fviz_pca_contrib(pcx2,axes = 2,choice = "var")
 
 
 p2 <- plot_pca_feats(pcx2, df_weights_unique, final_feats, axes = c(1,2))
@@ -1025,7 +1077,7 @@ FD_SO <- lapply(colnames(R_sub)[-ncol(R_sub)], function(col) {
     R_sub,
     factor_ = "y",
     response = col,
-    contrast_expr = "FD-SO"
+    contrast_expr = "SO-FD"
   )
   
   return(c(statistic = csa$statistic,

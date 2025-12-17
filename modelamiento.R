@@ -421,32 +421,38 @@ gg_roc <- ggplot(roc_df, aes(x = 1 - specificity, y = sensitivity, color = class
   theme_minimal()
 
 # Salidas
+
+# Medidas de convergencia
+diag <- list(
+  rhat   = max(summary(fit_brm)$fixed[,"Rhat"], na.rm=TRUE),
+  ess_bulk = min(summary(fit_brm)$fixed[,"Bulk_ESS"], na.rm=TRUE),
+  ess_tail = min(summary(fit_brm)$fixed[,"Tail_ESS"], na.rm=TRUE)
+)
+print(diag)
 print(metrics_grid8)
 print(cm_grid8)
+print(loo_brm)
+print(waic_brm)
+
 print(gg_roc)
 
 
+# --- 1) Métricas generales ---
+df_metrics <- metrics_grid8 %>%
+  mutate(
+    rhat      = diag$rhat,
+    ess_bulk  = diag$ess_bulk,
+    ess_tail  = diag$ess_tail,
+    elpd_loo  = loo_brm$estimates["elpd_loo", "Estimate"],
+    p_loo     = loo_brm$estimates["p_loo",   "Estimate"],
+    looic     = loo_brm$estimates["looic",   "Estimate"],
+    elpd_waic = waic_brm$estimates["elpd_waic", "Estimate"],
+    p_waic    = waic_brm$estimates["p_waic",    "Estimate"],
+    waic      = waic_brm$estimates["waic",      "Estimate"]
+  )
 
+# --- 2) Extraer métricas por clase desde cm_grid8 ---
+stats_class <- as.data.frame(t(cm_grid8$byClass))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+write.csv(stats_class,"./estadisticas_modelo.csv")
+write.csv(df_metrics,"./estadisticas_modelo2.csv")

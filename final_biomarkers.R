@@ -198,6 +198,79 @@ boot_metrics_multinom <- function(data, indices, df_test, fit, feats_all) {
 }
 
 
+summarize_biomarkers <- function(results){
+  
+  library(dplyr)
+  library(purrr)
+  library(tidyr)
+  
+  # Número de semillas
+  n_seeds <- length(results)
+  
+  # ---- 1. Procesar una semilla ----
+  extract_seed <- function(s){
+    
+    coefs_s <- as.matrix(Reduce("cbind", results[[s]]$coefs))
+    colnames(coefs_s) <- names(results[[s]]$coefs)
+    coefs_s <- coefs_s[-1, , drop = FALSE]
+    
+    class_max <- colnames(coefs_s)[apply(abs(coefs_s), 1, which.max)]
+    val_max   <- apply(coefs_s, 1, function(x) x[which.max(abs(x))])
+    
+    tibble(
+      seed  = s,
+      biomarker = rownames(coefs_s),
+      class = class_max,
+      sign  = sign(val_max)
+    )
+  }
+  
+  # ---- 2. Unir todas las semillas ----
+  df_all <- map_df(names(results), extract_seed)
+  
+  # ---- 3. Frecuencias de clase ----
+  freq_by_class <- df_all %>%
+    count(biomarker, class) %>%
+    group_by(biomarker) %>%
+    mutate(freq_class = n / sum(n)) %>%
+    ungroup()
+  
+  # ---- 4. Signo dominante ----
+  sign_summary <- df_all %>%
+    group_by(biomarker, sign) %>%
+    summarise(times = n(), .groups = "drop") %>%
+    group_by(biomarker) %>%
+    slice_max(times, n = 1) %>%
+    ungroup() %>%
+    mutate(sign_consistency = times / n_seeds) %>%
+    rename(final_sign = sign, sign_freq = times)
+  
+  # ---- 5. Consolidación final + Stability Score ----
+  final_table <- freq_by_class %>%
+    group_by(biomarker) %>%
+    slice_max(freq_class, n = 1) %>%          # clase más estable
+    ungroup() %>%
+    left_join(sign_summary, by = "biomarker") %>%
+    mutate(
+      stability_score = freq_class * sign_consistency
+    ) %>%
+    arrange(desc(stability_score))
+  
+  # ---- 6. Matriz biomarcador × clase ----
+  matrix_freq <- freq_by_class %>%
+    select(biomarker, class, freq_class) %>%
+    pivot_wider(names_from = class,
+                values_from = freq_class,
+                values_fill = 0)
+  
+  list(
+    df_all = df_all,
+    freq_by_class = freq_by_class,
+    final_table = final_table,
+    matrix_freq = matrix_freq
+  )
+}
+
 # === Helper: p-valor empírico (un/bi-caudal) ===
 p_emp <- function(x,
                   null,
@@ -216,11 +289,13 @@ run_full_pipeline <- function(df_train,
                               df_test,
                               freq_thr = 0.4,
                               seeds = 50) {
+  
+
   # df_train <- readRDS("./df_train_final.rds")[, -c(2:3)]
   # df_test  <- readRDS("./df_test_final.rds")[, -c(2:3)]
-  #
+  # 
   #   freq_thr = 0.4
-  #   seeds = 3
+  #   seeds =15 
   # 1. SPLS-DA FEATURES
   results_splsda <- run_splsda_seeds(seeds = 1:seeds,
                                      df_train = df_train,
@@ -264,8 +339,7 @@ run_full_pipeline <- function(df_train,
   boot_ci_bal <- boot.ci(boot_res_splsda, index = 2, type = "perc")
   boot_ci_BER <- boot.ci(boot_res_splsda, index = 3, type = "perc")
   
-  extract_ci <- function(ci)
-    c(ci$percent[4], ci$percent[5])
+  extract_ci <- function(ci) { c(ci$percent[4], ci$percent[5]) }
   
   ci_tab_splsda <- tibble(
     Metric   = c("Accuracy", "BalAccuracy", "BER"),
@@ -358,33 +432,17 @@ run_full_pipeline <- function(df_train,
   final_entry <- results[[best_idx]]
   
   coef_freq_list <- list()
-  for (s in names(results)) {
-    coefs_s <- results[[s]]$coefs
-    for (cls in names(coefs_s)) {
-      cf <- as.matrix(coefs_s[[cls]])
-      nz <- rownames(cf)[which(cf != 0)]
-      nz <- nz[nz != "(Intercept)"]
-      if (length(nz) > 0) {
-        coef_freq_list[[length(coef_freq_list) + 1]] <-
-          data.frame(seed = s,
-                     class = cls,
-                     feature = nz)
-      }
-    }
-  }
-  coef_freq_df <- bind_rows(coef_freq_list)
-  coef_freq_tab <- coef_freq_df %>%
-    group_by(class, feature) %>%
-    summarise(Freq = n(), .groups = "drop") %>%
-    mutate(RelFreq = Freq / length(results))
   
-  coef_freq_tab <- coef_freq_tab[coef_freq_tab$RelFreq > freq_thr, ]
+  
+  res <- summarize_biomarkers(results)
+  coef_freq_tab_glment <- res$final_table
+  # coef_freq_tab <- coef_freq_tab[coef_freq_tab$RelFreq > freq_thr, ]
   
   
   set.seed(123)
   boot_res <- boot(
     data = 1:length(y_test),
-    statistic = function(data, indices)
+    statistic = function(data, indices) {
       boot_metrics(
         data,
         indices,
@@ -392,7 +450,7 @@ run_full_pipeline <- function(df_train,
         y_test,
         fit = final_entry$fit,
         best_lambda = final_entry$lambda
-      ),
+      )},
     R = 2000
   )
   
@@ -428,8 +486,7 @@ run_full_pipeline <- function(df_train,
                        BalAccuracy = boot_ci_bal,
                        BER         = boot_ci_BER)
   
-  extract_ci <- function(x)
-    c(x$percent[4], x$percent[5])
+  extract_ci <- function(x) {c(x$percent[4], x$percent[5])}
   
   boot_ci_tab <- imap_dfr(seq_along(boot_ci_list), function(i, name) {
     ci_vals <- extract_ci(boot_ci_list[[i]])
@@ -488,14 +545,15 @@ run_full_pipeline <- function(df_train,
   # ---- Resultado final: una sola tabla
   final_tab <- bind_rows(boot_ci_tab, auc_tab)
   
+  
+  
   # 3. PLS-DA (mixOmics)
   feats_splsda <- results_splsda$feats_class_tab
   merged <- dplyr::inner_join(
     feats_splsda %>% dplyr::rename(Class_sPLSDA = Class, Freq_sPLSDA = Freq),
-    coef_freq_tab %>% dplyr::rename(
+    coef_freq_tab_glment %>% dplyr::rename(
       Class_elastic = class,
-      Freq_elastic = Freq,
-      RelFreq_elastic = RelFreq
+      feature = biomarker
     ),
     by = c("feats" = "feature")
   )
@@ -545,16 +603,15 @@ run_full_pipeline <- function(df_train,
   set.seed(123)
   boot_res_plsda <- boot(
     data = 1:nrow(X_test_plsda),
-    statistic = function(data, indices)
-      boot_metrics_plsda(data, indices, X_test_plsda, y_test_plsda, mdl),
+    statistic = function(data, indices) {
+      boot_metrics_plsda(data, indices, X_test_plsda, y_test_plsda, mdl)},
     R = 2000
   )
   
   boot_ci_acc <- boot.ci(boot_res_plsda, index = 1, type = "perc")
   boot_ci_bal <- boot.ci(boot_res_plsda, index = 2, type = "perc")
   boot_ci_BER <- boot.ci(boot_res_plsda, index = 3, type = "perc")
-  extract_ci <- function(ci)
-    c(ci$percent[4], ci$percent[5])
+  extract_ci <- function(ci) {    c(ci$percent[4], ci$percent[5])}
   ci_tab_plsda <- tibble(
     Metric   = c("Accuracy", "BalAccuracy", "BER"),
     Estimate = boot_res_plsda$t0,
@@ -611,8 +668,8 @@ run_full_pipeline <- function(df_train,
   set.seed(123)
   boot_res <- boot(
     data = 1:nrow(df_test),
-    statistic = function(data, indices)
-      boot_metrics_multinom(data, indices, df_test, fit_final, feats_all),
+    statistic = function(data, indices){
+      boot_metrics_multinom(data, indices, df_test, fit_final, feats_all)},
     R = 2000
   )
   boot_ci_acc <- boot.ci(boot_res, index = 1, type = "perc")
@@ -765,7 +822,7 @@ run_full_pipeline <- function(df_train,
   print(metrics_all_long)
   
   freq_splsda <- results_splsda$feats_class_tab
-  freq_elastic  <- coef_freq_tab
+  # freq_elastic  <- coef_freq_tab_glment$
   plsda_loadings <- cargas %>%
     dplyr::select(Feature, NP, FD, SO, GroupContrib, importance, Comp) %>%
     dplyr::mutate(
@@ -792,17 +849,17 @@ run_full_pipeline <- function(df_train,
     ) %>%
     rename(Feature = feats)
   
-  elastic_tab <- coef_freq_tab %>%
-    group_by(feature) %>%
+  elastic_tab <- coef_freq_tab_glment %>%
+    group_by(biomarker) %>%
     summarise(
-      Class_elastic   = paste0(unique(class), collapse = ";"),
-      Freq_elastic    = max(Freq, na.rm = TRUE),
+      Class_elastic   = class,
+      stability_score_GLMNET    = stability_score,
       # no sumar
-      RelFreq_elastic = max(RelFreq, na.rm = TRUE),
+      RelFreq_elastic = n/seeds,
       # se mantiene en [0,1]
       .groups = "drop"
     ) %>%
-    rename(Feature = feature)
+    rename(Feature = biomarker)
   
   plsda_tab <- plsda_loadings %>%
     dplyr::select(Feature,
@@ -879,10 +936,10 @@ run_full_pipeline <- function(df_train,
       ),
       
       # Criterio basado en coeficientes multinomiales (≠ 0)
-      crit_multinom = ifelse(!is.na(Multinom_Coef) &
-                               max(abs(
-                                 as.numeric(strsplit(Multinom_Coef, ";")[[1]])
-                               ), na.rm = TRUE) >= 0.2, 1, 0)      ,
+      crit_multinom =  ifelse(!is.na(Multinom_Coef) &
+                                max(abs(
+                                  as.numeric(unlist(strsplit(features_final$Multinom_Coef, ";")))
+                                ), na.rm = TRUE) >= 0.2, 1, 0)   ,
       # Score global
       Score     = crit_splsda + crit_elastic + crit_plsda + crit_multinom,
       Candidate = ifelse(Score >= 3, "Yes", "No")
@@ -891,6 +948,8 @@ run_full_pipeline <- function(df_train,
   
   return(list(metrics = metrics_all_long, features = features_final))
 }
+
+
 
 #=====Ejecución=====
 
